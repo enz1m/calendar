@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Calendar
+Exec=calendar-app %U
+TryExec=calendar-app
+Icon=io.github.enzui.Calendar
+Terminal=false
+Categories=Office;
+MimeType=text/calendar;application/ics;
