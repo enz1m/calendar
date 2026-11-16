@@ -90,42 +90,29 @@ fn titlebar_actions<'a>() -> Vec<TitlebarActionItem<'a, Message>> {
 
 fn titlebar_search(app: &AppState) -> Element<'_, Message> {
     use enzui_widgets::{
-        enz_text::{TextSize, TextTone, enz_text},
-        list_row_surface::enz_list_row_surface,
         search_field::enz_titlebar_search,
+        suggestion_list::{SuggestionOption, enz_suggestion_list},
     };
     let fmt = app.time_format();
-    let mut results = iced::widget::column![];
-    let hits = app.search(&app.search_query);
-    for e in hits.iter().take(TITLEBAR_SEARCH_MAX_RESULTS) {
-        let subtitle = format!(
-            "{}, {}",
-            search_result_date_label(e, app.today),
-            e.time_label(&fmt)
-        );
-        results = results.push(
-            enz_list_row_surface(
-                iced::widget::column![
-                    enz_text(e.title.clone()),
-                    enz_text(subtitle)
-                        .size(TextSize::Caption)
-                        .tone(TextTone::Muted)
-                ]
-                .spacing(4),
-                Message::JumpToEvent(e.id),
-            )
-            .label(e.title.clone())
-            .content_height(true)
-            .width(Length::Fill),
-        );
-    }
-    if hits.is_empty() {
-        results = results.push(
-            enz_text(crate::l10n::tr("No matching events"))
-                .size(TextSize::Caption)
-                .tone(TextTone::Muted),
-        );
-    }
+    let options = app
+        .search(&app.search_query)
+        .iter()
+        .take(TITLEBAR_SEARCH_MAX_RESULTS)
+        .map(|e| {
+            let subtitle = format!(
+                "{}, {}",
+                search_result_date_label(e, app.today),
+                e.time_label(&fmt)
+            );
+            SuggestionOption::new(e.id.to_string(), e.title.clone(), e.id).subtitle(subtitle)
+        })
+        .collect();
+    let results = enz_suggestion_list(options, |id: &u64| Message::JumpToEvent(*id))
+        .embedded(true)
+        .show_empty(true)
+        .empty_text(crate::l10n::tr("No matching events"))
+        .list_label(crate::l10n::tr("Search results"))
+        .id_prefix("calendar-search-result");
     enz_titlebar_search(&app.search_query, Message::SearchChanged)
         .placeholder(crate::l10n::tr("Search events…"))
         .id(iced::advanced::widget::Id::new("calendar-titlebar-search"))
