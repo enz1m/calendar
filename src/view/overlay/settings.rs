@@ -51,6 +51,8 @@ pub(crate) fn settings(app: &AppState) -> Element<'_, Message> {
     let hours = enz_preferences_group({
         let end = s.work_end_minute;
         let start = s.work_start_minute;
+        let fmt = app.time_format();
+        let (start_fmt, end_fmt) = (fmt.clone(), fmt.clone());
         row![
             enz_stepper(start, move |v| Message::SetWorkHours(v, end))
                 .aria_label(crate::l10n::tr("Working hours start"))
@@ -58,7 +60,10 @@ pub(crate) fn settings(app: &AppState) -> Element<'_, Message> {
                 .min(0)
                 .max(23 * 60)
                 .step(60)
-                .value_text(MinuteOfDay::new(start).format(&app.time_format())),
+                .value_text(crate::time_entry::work_hour_text(start, &fmt))
+                .parse_value_text(move |text| {
+                    crate::time_entry::parse_work_hour(text, &start_fmt, false)
+                }),
             enz_text(crate::l10n::tr("to"))
                 .size(TextSize::Caption)
                 .tone(TextTone::Muted),
@@ -68,7 +73,10 @@ pub(crate) fn settings(app: &AppState) -> Element<'_, Message> {
                 .min(60)
                 .max(24 * 60)
                 .step(60)
-                .value_text(MinuteOfDay::new(end).format(&app.time_format())),
+                .value_text(crate::time_entry::work_hour_text(end, &fmt))
+                .parse_value_text(move |text| {
+                    crate::time_entry::parse_work_hour(text, &end_fmt, true)
+                }),
         ]
         .mirrored(crate::l10n::rtl())
         .spacing(SpaceToken::Xs.px())

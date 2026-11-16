@@ -4,7 +4,7 @@ use enzui_core::schedule::format_duration;
 use enzui_core::time_of_day::{TimeFormat, TimeOfDay};
 use enzui_widgets::time_field::TimeFieldEvent;
 
-use crate::model::{Event, MinuteOfDay};
+use crate::model::{Event, MINUTES_PER_DAY, MinuteOfDay};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct TimeDrafts {
@@ -91,7 +91,58 @@ pub(crate) fn apply_end(
     }
 }
 
+// Display the end-of-day bound as midnight instead of clamping it to 23:59.
+#[must_use]
+pub(crate) fn work_hour_text(minute: i32, fmt: &TimeFormat) -> String {
+    if minute >= MINUTES_PER_DAY {
+        fmt.format(TimeOfDay::MIDNIGHT)
+    } else {
+        MinuteOfDay::new(minute).format(fmt)
+    }
+}
+
+// Midnight denotes 24:00 for an end bound and 00:00 for a start bound.
+#[must_use]
+pub(crate) fn parse_work_hour(text: &str, fmt: &TimeFormat, end: bool) -> Option<i32> {
+    let minute = minute_of(fmt.parse(text).ok()?).get();
+    Some(if end && minute == 0 {
+        MINUTES_PER_DAY
+    } else {
+        minute
+    })
+}
+
 #[must_use]
 pub(crate) fn duration_label(event: &Event) -> String {
     format_duration(event.duration_minutes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use enzui_core::time_of_day::HourCycle;
+
+    fn h12() -> TimeFormat {
+        TimeFormat::new(HourCycle::H12)
+    }
+
+    #[test]
+    fn typed_working_hours_keep_their_minutes() {
+        assert_eq!(parse_work_hour("8:30 AM", &h12(), false), Some(8 * 60 + 30));
+        assert_eq!(parse_work_hour("5:45 PM", &h12(), true), Some(17 * 60 + 45));
+        assert_eq!(parse_work_hour("soon", &h12(), false), None);
+    }
+
+    #[test]
+    fn midnight_is_the_end_of_the_working_day() {
+        assert_eq!(
+            parse_work_hour("12:00 AM", &h12(), true),
+            Some(MINUTES_PER_DAY)
+        );
+        assert_eq!(parse_work_hour("12:00 AM", &h12(), false), Some(0));
+        assert_eq!(
+            work_hour_text(MINUTES_PER_DAY, &h12()),
+            work_hour_text(0, &h12())
+        );
+    }
 }

@@ -45,8 +45,8 @@ const DIALOG_CONTENT_MAX_H_PX: f32 = 600.0;
 
 use crate::message::Message;
 use crate::model::{
-    ALERT_CHOICES, COLOR_KEYS, Event, MinuteOfDay, Recurrence, RecurrenceEndKind, TimeFormatPref,
-    alert_label, date_label, palette_color,
+    ALERT_CHOICES, COLOR_KEYS, Event, Recurrence, RecurrenceEndKind, TimeFormatPref, alert_label,
+    date_label, palette_color,
 };
 use crate::state::{
     AppState, DateField, MenuTarget, Overlay, PendingImport, PendingRecurrenceChoice,
