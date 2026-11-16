@@ -324,12 +324,14 @@ pub(super) fn editor<'a>(
                 .form_padding(0.0)
                 .row_gap(SpaceToken::Sm),
         )
+        .insets(0.0, super::dialog_scroll_gutter(), 0.0, 0.0)
         .height(Length::Shrink)
         .into(),
         Some(footer.align_y(Alignment::Center).into()),
         editor_dialog_width(),
         Some(|| Message::CloseOverlay),
         Some(theme.palette.surface),
+        true,
     )
 }
 

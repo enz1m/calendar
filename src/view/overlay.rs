@@ -227,7 +227,14 @@ fn dialog<'a>(
         width,
         Some(|| Message::CloseOverlay),
         None,
+        false,
     )
+}
+
+/// Right padding a scrolling dialog body gives its content, matching the
+/// surface inset it runs into; see `dialog_surface`'s `scroll_body`.
+pub(super) fn dialog_scroll_gutter() -> f32 {
+    SpaceToken::Md.px()
 }
 
 fn dialog_surface<'a>(
@@ -237,8 +244,15 @@ fn dialog_surface<'a>(
     width: f32,
     dismiss: Option<fn() -> Message>,
     background: Option<iced::Color>,
+    scroll_body: bool,
 ) -> Element<'a, Message> {
     let inset = close_inset(enzui_theme::text_defaults::shape_radius(|s| s.dialog));
+    let pad = dialog_scroll_gutter();
+    // A scrolling body runs to the surface's right edge and pads its own
+    // content (`dialog_scroll_gutter`), so its overlay scrollbar sits in
+    // the dialog's edge strip instead of over the fields. The header and
+    // footer keep the surface's inset themselves.
+    let chrome_right = if scroll_body { pad } else { 0.0 };
     let head = enzui_widgets::title_bar::enz_title_bar()
         .title(crate::l10n::tr(title.into()))
         .title_heading(HeadingLevel::Page)
@@ -252,15 +266,26 @@ fn dialog_surface<'a>(
         .into_element();
 
     let head = container(head).padding(iced::Padding {
-        right: if dismiss.is_some() {
-            CLOSE_CONTROL_SIZE + inset
-        } else {
-            0.0
-        },
+        right: chrome_right
+            + if dismiss.is_some() {
+                CLOSE_CONTROL_SIZE + inset
+            } else {
+                0.0
+            },
         ..iced::Padding::ZERO
     });
 
-    let below = footer.into_iter().collect();
+    let below = footer
+        .into_iter()
+        .map(|footer| {
+            container(footer)
+                .padding(iced::Padding {
+                    right: chrome_right,
+                    ..iced::Padding::ZERO
+                })
+                .into()
+        })
+        .collect();
     let content = enz_capped_dialog_body(
         vec![head.into()],
         body,
@@ -270,8 +295,13 @@ fn dialog_surface<'a>(
     );
     let surface = enz_modal_surface(content.into_element())
         .width(Length::Fixed(width))
-        .padding(SpaceToken::Md.px())
+        .padding(pad)
         .padding_top(inset);
+    let surface = if scroll_body {
+        surface.padding_right(0.0)
+    } else {
+        surface
+    };
     let surface = match background {
         Some(color) => surface.background(color),
         None => surface,
@@ -510,6 +540,7 @@ fn booting<'a>() -> Element<'a, Message> {
         380.0,
         None,
         None,
+        false,
     )
 }
 
