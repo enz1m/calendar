@@ -21,23 +21,23 @@ center = ["dep:enzui-agent", "dep:enzui-agent-app"]
 
 [dependencies]
 tempfile = "3"
-iced = { default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "thread-pool", "linux-theme-detection", "wayland", "canvas", "svg", "a11y", "tokio"], git = "https://github.com/enz1m/enzim-iced.git", rev = "67f991b7442cbd79821141069c3b864cc12413f2" }
-iced_renderer = { default-features = false, git = "https://github.com/enz1m/enzim-iced.git", rev = "67f991b7442cbd79821141069c3b864cc12413f2" }
-enzui-core = { features = ["accesskit", "activation-native-iced"], git = "https://github.com/enz1m/enzui.git", tag = "v0.1.0-alpha.1" }
-enzui-parent-lease = { git = "https://github.com/enz1m/enzui.git", tag = "v0.1.0-alpha.1" }
-enzui-wayland = { git = "https://github.com/enz1m/enzui.git", tag = "v0.1.0-alpha.1" }
-enzui-services = { git = "https://github.com/enz1m/enzui.git", tag = "v0.1.0-alpha.1" }
-enzui-theme = { git = "https://github.com/enz1m/enzui.git", tag = "v0.1.0-alpha.1" }
-enzui-widgets = { features = ["portal-dbus", "application-dbus"], git = "https://github.com/enz1m/enzui.git", tag = "v0.1.0-alpha.1" }
-enzui-agent = { features = ["iced-consumer"], optional = true, git = "https://github.com/enz1m/enzui.git", tag = "v0.1.0-alpha.1" }
+iced = { default-features = false, features = ["wgpu", "tiny-skia", "crisp", "web-colors", "thread-pool", "linux-theme-detection", "wayland", "canvas", "svg", "a11y", "tokio"], git = "https://github.com/enz1m/enzim-iced.git", rev = "de6159248c487dddaeec639fe4ec0e7c41c1de2b" }
+iced_renderer = { default-features = false, git = "https://github.com/enz1m/enzim-iced.git", rev = "de6159248c487dddaeec639fe4ec0e7c41c1de2b" }
+enzui-core = { features = ["accesskit", "activation-native-iced"], git = "https://github.com/enz1m/enzui.git", rev = "a8310925b96e8ef28deafc7234371e31225d2d4e" }
+enzui-parent-lease = { git = "https://github.com/enz1m/enzui.git", rev = "a8310925b96e8ef28deafc7234371e31225d2d4e" }
+enzui-wayland = { git = "https://github.com/enz1m/enzui.git", rev = "a8310925b96e8ef28deafc7234371e31225d2d4e" }
+enzui-services = { git = "https://github.com/enz1m/enzui.git", rev = "a8310925b96e8ef28deafc7234371e31225d2d4e" }
+enzui-theme = { git = "https://github.com/enz1m/enzui.git", rev = "a8310925b96e8ef28deafc7234371e31225d2d4e" }
+enzui-widgets = { features = ["portal-dbus", "application-dbus"], git = "https://github.com/enz1m/enzui.git", rev = "a8310925b96e8ef28deafc7234371e31225d2d4e" }
+enzui-agent = { features = ["iced-consumer"], optional = true, git = "https://github.com/enz1m/enzui.git", rev = "a8310925b96e8ef28deafc7234371e31225d2d4e" }
 # Desktop ownership and windowless activation share the same application state.
-enzui-agent-app = { optional = true, git = "https://github.com/enz1m/enzui.git", tag = "v0.1.0-alpha.1" }
+enzui-agent-app = { optional = true, git = "https://github.com/enz1m/enzui.git", rev = "a8310925b96e8ef28deafc7234371e31225d2d4e" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Event-date offset resolution supplements the framework's zoneless civil dates.
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 [dev-dependencies]
-iced_test = { git = "https://github.com/enz1m/enzim-iced.git", rev = "67f991b7442cbd79821141069c3b864cc12413f2" }
+iced_test = { git = "https://github.com/enz1m/enzim-iced.git", rev = "de6159248c487dddaeec639fe4ec0e7c41c1de2b" }
 
 [patch.crates-io]
 zbus_macros = { git = "https://github.com/enz1m/enzim-zbus.git", rev = "815a9ca7b64aa24e14ccb6ea3f7eda97ef7bbc8a" }
