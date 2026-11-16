@@ -178,25 +178,22 @@ fn calendars_page(app: &AppState) -> Element<'_, Message> {
         let id = c.id.clone();
         let edit_id = id.clone();
         list = list.push(
-            row![
-                enz_preferences_row(c.name.as_str())
-                    .subtitle(c.section.as_str())
-                    .switch(c.visible, move |_| Message::ToggleCalendar(id.clone()))
-                    .into_element(),
-                enz_button(
-                    crate::l10n::tr("Edit"),
-                    Message::Calendar(crate::calendars::Action::Edit(edit_id))
+            enz_preferences_row(c.name.as_str())
+                .subtitle(c.section.as_str())
+                .suffix(
+                    enz_button(
+                        crate::l10n::tr("Edit"),
+                        Message::Calendar(crate::calendars::Action::Edit(edit_id)),
+                    )
+                    .kind(ButtonKind::Quiet)
+                    .id(iced::advanced::widget::Id::from(format!(
+                        "calendar-edit-{}",
+                        c.id
+                    )))
+                    .size(ButtonSize::Sm),
                 )
-                .kind(ButtonKind::Quiet)
-                .id(iced::advanced::widget::Id::from(format!(
-                    "calendar-edit-{}",
-                    c.id
-                )))
-                .size(ButtonSize::Sm),
-            ]
-            .mirrored(crate::l10n::rtl())
-            .align_y(Alignment::Center)
-            .spacing(SpaceToken::Xs.px()),
+                .switch(c.visible, move |_| Message::ToggleCalendar(id.clone()))
+                .into_element(),
         );
     }
     let calendars = enz_preferences_group(list)
