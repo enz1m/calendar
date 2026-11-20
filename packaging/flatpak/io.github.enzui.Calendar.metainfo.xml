@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<component type="desktop-application">
+  <id>io.github.enzui.Calendar</id>
+  <name>Calendar</name>
+  <summary>Manage events and reminders</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.enz1m">
+    <name>enzUI contributors</name>
+  </developer>
+  <launchable type="desktop-id">io.github.enzui.Calendar.desktop</launchable>
+  <content_rating type="oars-1.1" />
+  <description>
+    <p>Browse calendars by day, week, month, or year. Create events, import calendar files, and receive reminders while Calendar is open.</p>
+  </description>
+  <url type="homepage">https://github.com/enz1m/calendar</url>
+  <url type="bugtracker">https://github.com/enz1m/calendar/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/enz1m/calendar/64422e3fa341226fadf8e56ee47ff777c75a9a2f/docs/screenshots/basic-dark.png</image>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="0.1.1" date="2026-11-20">
+      <description>
+        <p>Add Flatpak packaging for enzim Apps.</p>
+      </description>
+    </release>
+  </releases>
+</component>

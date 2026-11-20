@@ -1,0 +1,53 @@
+{
+  "app-id": "io.github.enzui.Calendar",
+  "branch": "stable",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "26.08",
+  "sdk": "org.freedesktop.Sdk",
+  "sdk-extensions": [
+    "org.freedesktop.Sdk.Extension.rust-stable"
+  ],
+  "command": "calendar-app",
+  "finish-args": [
+    "--socket=wayland",
+    "--device=dri",
+    "--talk-name=org.freedesktop.Notifications"
+  ],
+  "build-options": {
+    "append-path": "/usr/lib/sdk/rust-stable/bin"
+  },
+  "modules": [
+    {
+      "name": "calendar",
+      "buildsystem": "simple",
+      "build-commands": [
+        "cargo build --locked --offline --release --jobs \"${FLATPAK_BUILDER_N_JOBS:-2}\" --bin calendar-app",
+        "install -Dm755 target/release/calendar-app /app/bin/calendar-app",
+        "install -Dm644 assets/io.github.enzui.Calendar.desktop /app/share/applications/io.github.enzui.Calendar.desktop",
+        "install -Dm644 packaging/flatpak/io.github.enzui.Calendar.metainfo.xml /app/share/metainfo/io.github.enzui.Calendar.metainfo.xml",
+        "install -Dm644 assets/io.github.enzui.Calendar.svg /app/share/icons/hicolor/scalable/apps/io.github.enzui.Calendar.svg",
+        "install -Dm644 LICENSE /app/share/licenses/io.github.enzui.Calendar/LICENSE"
+      ],
+      "sources": [
+        {
+          "type": "git",
+          "url": "https://github.com/enz1m/calendar.git",
+          "commit": "@ENZIM_SOURCE_COMMIT@",
+          "disable-submodules": true
+        },
+        {
+          "type": "archive",
+          "url": "https://github.com/enz1m/calendar/releases/download/v0.1.1/calendar-cargo-vendor-0.1.1.tar.xz",
+          "sha256": "efb4f93d3a33c1b65807bcbe142954d6f25b0c7abbd3b27310a7852e60ca2dce",
+          "strip-components": 1
+        },
+        {
+          "type": "file",
+          "url": "https://raw.githubusercontent.com/enz1m/enzim-winit/40eeb41f8637ef1620afa377ba006874224b6d65/wayland-protocols/xdg-session-management-v1.xml",
+          "sha256": "3674591ca8e68f76297c535e8edd6783d84b59086c38ebe08ff5ff1f2dec5bae",
+          "dest": "vendor/winit-0.30.13/wayland-protocols"
+        }
+      ]
+    }
+  ]
+}
