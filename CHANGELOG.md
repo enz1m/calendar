@@ -2,8 +2,8 @@
 
 ## 0.1.2
 
-- Export timed recurrence boundaries as date-times so recurring events retain their time in exported calendars.
-- Update enzUI and its paired iced fork for nonblocking Wayland presentation discovery.
+- Exported calendars keep the time information for recurring events with a scheduled end date.
+- The calendar window can appear without waiting for display setup on Wayland.
 
 ## 0.1.0
 
