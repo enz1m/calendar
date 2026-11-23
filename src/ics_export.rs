@@ -203,17 +203,27 @@ fn write_vevent(
         });
     }
 
-    if let Some(rrule) = rrule_line(e) {
+    let occurrence_minute = (!e.all_day
+        && !e.tz_anchor.is_anchored()
+        && e.recurrence != Recurrence::None
+        && e.recurrence_raw.is_none())
+    .then_some(e.start_minute.get());
+    if let Some(rrule) = rrule_line(e, occurrence_minute) {
         lines.push(rrule);
     }
     if !e.exceptions.is_empty() {
-        let joined = e
+        let dates = e
             .exceptions
             .iter()
-            .map(|d| fmt_date(*d))
+            .map(|&date| fmt_recurrence_date(date, occurrence_minute))
             .collect::<Vec<_>>()
             .join(",");
-        lines.push(format!("EXDATE;VALUE=DATE:{joined}"));
+        let property = if occurrence_minute.is_some() {
+            "EXDATE"
+        } else {
+            "EXDATE;VALUE=DATE"
+        };
+        lines.push(format!("{property}:{dates}"));
     }
     if let Some(minutes) = e.alert {
         write_valarm(lines, e, minutes);
@@ -248,7 +258,7 @@ fn byday_code(w: Weekday) -> &'static str {
     }
 }
 
-fn rrule_line(e: &Event) -> Option<String> {
+fn rrule_line(e: &Event, occurrence_minute: Option<i32>) -> Option<String> {
     if e.recurrence == Recurrence::None {
         return None;
     }
@@ -280,11 +290,22 @@ fn rrule_line(e: &Event) -> Option<String> {
     }
     // UNTIL takes precedence over COUNT if both are present in recovered data.
     if let Some(until) = e.recurrence_until {
-        let _ = write!(rule, ";UNTIL={}", fmt_date(until));
+        let _ = write!(
+            rule,
+            ";UNTIL={}",
+            fmt_recurrence_date(until, occurrence_minute)
+        );
     } else if let Some(count) = e.recurrence_count {
         let _ = write!(rule, ";COUNT={}", count.max(1));
     }
     Some(rule)
+}
+
+fn fmt_recurrence_date(date: Date, occurrence_minute: Option<i32>) -> String {
+    match occurrence_minute {
+        Some(minute) => fmt_datetime(date, minute, false),
+        None => fmt_date(date),
+    }
 }
 
 fn fmt_date(d: Date) -> String {

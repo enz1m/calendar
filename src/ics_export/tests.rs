@@ -40,11 +40,24 @@ fn round_trip_preserves_a_full_timed_recurring_event() {
         recurrence: Recurrence::Weekly,
         recurrence_until: Some(d(2025, 12, 31)),
         recurrence_weekdays: vec![Weekday::Wednesday, Weekday::Friday],
-        exceptions: vec![d(2025, 7, 3), d(2025, 8, 7)],
+        exceptions: vec![d(2025, 7, 4), d(2025, 8, 6)],
         alert: Some(15),
         tz_anchor: TzAnchor::Floating,
         ..Event::new(7, "cal.work", d(2025, 6, 4))
     };
+
+    let text = serialize_calendar(std::slice::from_ref(&base), STAMP());
+    let recurrence_lines: Vec<_> = text
+        .lines()
+        .filter(|line| line.starts_with("RRULE:") || line.starts_with("EXDATE"))
+        .collect();
+    assert_eq!(
+        recurrence_lines,
+        [
+            "RRULE:FREQ=WEEKLY;BYDAY=WE,FR;UNTIL=20251231T140000",
+            "EXDATE:20250704T140000,20250806T140000",
+        ]
+    );
 
     let mut missing_identity = base.clone();
     missing_identity.uid = None;
@@ -91,12 +104,15 @@ fn a_single_fixed_utc_event_round_trips_both_instants_and_duration_with_asymmetr
 }
 
 #[test]
-fn a_multi_day_all_day_event_keeps_its_inclusive_end() {
+fn a_multi_day_all_day_series_keeps_date_bounds_and_its_inclusive_end() {
     let base = Event {
         title: "Trip to Lisbon".to_owned(),
         uid: Some("trip@example.invalid".into()),
         all_day: true,
         end_date: d(2025, 6, 8),
+        recurrence: Recurrence::Yearly,
+        recurrence_until: Some(d(2027, 6, 2)),
+        exceptions: vec![d(2026, 6, 2)],
         ..Event::new(3, "cal.home", d(2025, 6, 2))
     };
     let text = serialize_calendar(std::slice::from_ref(&base), STAMP());
@@ -104,8 +120,18 @@ fn a_multi_day_all_day_event_keeps_its_inclusive_end() {
         text.contains("DTEND;VALUE=DATE:20250609"),
         "multi-day all-day DTEND must be inclusive-end + 1; got:\n{text}"
     );
+    assert!(
+        text.lines()
+            .any(|line| line == "RRULE:FREQ=YEARLY;UNTIL=20270602")
+    );
+    assert!(
+        text.lines()
+            .any(|line| line == "EXDATE;VALUE=DATE:20260602")
+    );
     let got = round_trip(base);
     assert!(got.all_day);
     assert_eq!(got.date, d(2025, 6, 2));
     assert_eq!(got.end_date, d(2025, 6, 8));
+    assert_eq!(got.recurrence_until, Some(d(2027, 6, 2)));
+    assert_eq!(got.exceptions, [d(2026, 6, 2)]);
 }
