@@ -14,14 +14,15 @@ fn serialize_events<'a>(
     events: impl Iterator<Item = &'a Event>,
     stamp: Date,
 ) -> (String, Vec<ExportOmission>) {
+    let events: Vec<&Event> = events.collect();
     let mut lines: Vec<String> = Vec::new();
     let mut omissions: Vec<ExportOmission> = Vec::new();
     lines.push("BEGIN:VCALENDAR".to_owned());
     lines.push("VERSION:2.0".to_owned());
     lines.push(format!("PRODID:{PRODID}"));
     lines.push("CALSCALE:GREGORIAN".to_owned());
-    for event in events {
-        write_vevent(&mut lines, event, stamp, &mut omissions);
+    for event in &events {
+        write_vevent(&mut lines, event, &events, stamp, &mut omissions);
     }
     lines.push("END:VCALENDAR".to_owned());
 
@@ -116,9 +117,14 @@ pub(crate) fn serialize_calendar_checked(
     (document, skipped, omissions)
 }
 
+fn shares_series(a: &Event, b: &Event) -> bool {
+    a.uid.is_some() && a.uid == b.uid
+}
+
 fn write_vevent(
     lines: &mut Vec<String>,
     e: &Event,
+    exported: &[&Event],
     stamp: Date,
     omissions: &mut Vec<ExportOmission>,
 ) {
@@ -136,9 +142,26 @@ fn write_vevent(
             field: OmittedField::Uid,
         }),
     }
-    // RECURRENCE-ID distinguishes an override from its parent sharing the same UID.
+    // RECURRENCE-ID names the replaced series occurrence in the series DTSTART value type.
     if let Some(rid) = e.recurrence_id {
-        lines.push(format!("RECURRENCE-ID;VALUE=DATE:{}", fmt_date(rid)));
+        let series = exported
+            .iter()
+            .find(|s| s.recurrence_id.is_none() && shares_series(s, e))
+            .copied()
+            .unwrap_or(e);
+        if series.all_day {
+            lines.push(format!("RECURRENCE-ID;VALUE=DATE:{}", fmt_date(rid)));
+        } else {
+            let (start_offset, _) = series.tz_anchor.offsets().unwrap_or((0, 0));
+            lines.push(format!(
+                "RECURRENCE-ID:{}",
+                fmt_datetime(
+                    rid,
+                    series.start_minute.get() - start_offset,
+                    series.tz_anchor.is_anchored()
+                )
+            ));
+        }
     }
     lines.push(format!("DTSTAMP:{}T000000Z", fmt_date(stamp)));
     lines.push(format!("SUMMARY:{}", escape_text(&e.title)));
@@ -211,9 +234,19 @@ fn write_vevent(
     if let Some(rrule) = rrule_line(e, occurrence_minute) {
         lines.push(rrule);
     }
-    if !e.exceptions.is_empty() {
-        let dates = e
-            .exceptions
+    // An exported override replaces its occurrence, so EXDATE must not also remove it.
+    let exdates: Vec<Date> = e
+        .exceptions
+        .iter()
+        .copied()
+        .filter(|&date| {
+            !exported
+                .iter()
+                .any(|o| o.recurrence_id == Some(date) && shares_series(o, e))
+        })
+        .collect();
+    if !exdates.is_empty() {
+        let dates = exdates
             .iter()
             .map(|&date| fmt_recurrence_date(date, occurrence_minute))
             .collect::<Vec<_>>()

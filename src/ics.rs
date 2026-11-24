@@ -125,6 +125,8 @@ pub(crate) fn bounded_warning_feedback(
 #[derive(Debug, Default, Clone, PartialEq)]
 pub(crate) struct ParsedIcs {
     pub events: Vec<Event>,
+    pub cancelled_occurrences: Vec<(String, Date)>,
+    pub cancelled_events: usize,
     pub warnings: Vec<String>,
     pub omitted_warnings: usize,
 }
@@ -155,8 +157,14 @@ pub(crate) fn parse_ics(text: &str, default_calendar_id: &str) -> Result<ParsedI
             match find_end(&unfolded, i + 1, "VEVENT") {
                 Some(end) => {
                     match parse_vevent(&unfolded[i + 1..end], default_calendar_id, &tzdb) {
-                        Ok((ev, warnings)) => {
-                            out.events.push(ev);
+                        Ok((ev, warnings, cancelled)) => {
+                            match (cancelled, &ev.uid, ev.recurrence_id) {
+                                (false, ..) => out.events.push(ev),
+                                (true, Some(uid), Some(date)) => {
+                                    out.cancelled_occurrences.push((uid.clone(), date));
+                                }
+                                (true, ..) => out.cancelled_events += 1,
+                            }
                             for warning in warnings {
                                 out.push_warning(warning);
                             }
@@ -175,7 +183,7 @@ pub(crate) fn parse_ics(text: &str, default_calendar_id: &str) -> Result<ParsedI
         i += 1;
     }
 
-    if out.events.is_empty() {
+    if out.events.is_empty() && out.cancelled_occurrences.is_empty() && out.cancelled_events == 0 {
         let Some(details) = out.warnings.first() else {
             return Err("No events found in this file.".to_owned());
         };
@@ -374,7 +382,7 @@ fn parse_vevent(
     lines: &[String],
     calendar_id: &str,
     tz: &TzDb,
-) -> Result<(Event, Vec<String>), String> {
+) -> Result<(Event, Vec<String>, bool), String> {
     let mut title = String::new();
     let mut location = String::new();
     let mut notes = String::new();
@@ -395,6 +403,7 @@ fn parse_vevent(
     let mut uid: Option<String> = None;
     let mut recurrence_id_date: Option<Date> = None;
     let mut exceptions: Vec<Date> = Vec::new();
+    let mut cancelled = false;
     let mut alert: Option<i32> = None;
     // An unresolved TZID must refuse the event instead of silently changing it to floating time.
     let mut unresolved_zone: Option<String> = None;
@@ -483,6 +492,7 @@ fn parse_vevent(
             "RECURRENCE-ID" => {
                 recurrence_id_date = parse_date_prefix(p.value.trim());
             }
+            "STATUS" => cancelled = p.value.trim().eq_ignore_ascii_case("CANCELLED"),
             "EXDATE" => {
                 for part in p.value.split(',') {
                     if let Some(d) = parse_date_prefix(part.trim()) {
@@ -621,6 +631,7 @@ fn parse_vevent(
             recurrence_id: recurrence_id_date,
         },
         warnings,
+        cancelled,
     ))
 }
 

@@ -223,9 +223,15 @@ impl AppState {
             return report;
         }
 
+        // Overrides follow every parent so each finds its series regardless of file order.
+        let (overrides, parents): (Vec<Event>, Vec<Event>) = parsed
+            .events
+            .into_iter()
+            .partition(|ev| ev.recurrence_id.is_some());
+
         // Resolve anchored endpoints independently into local time to preserve a DST-straddling
         // span.
-        for mut ev in parsed.events {
+        for mut ev in parents.into_iter().chain(overrides) {
             calendar_id.clone_into(&mut ev.calendar_id);
             if ev.tz_anchor.is_anchored() {
                 let start_offset =
@@ -249,6 +255,9 @@ impl AppState {
                 report.added = 0;
                 return report;
             };
+            if let (Some(uid), Some(date)) = (&ev.uid, ev.recurrence_id) {
+                self.except_series_occurrence(calendar_id, uid, date);
+            }
             ev.id = id;
             if ev.uid.is_none() {
                 ev.uid = crate::ics_safety::mint_uid();
@@ -256,7 +265,24 @@ impl AppState {
             self.events.push(ev);
             report.added += 1;
         }
+        for (uid, date) in &parsed.cancelled_occurrences {
+            self.except_series_occurrence(calendar_id, uid, *date);
+        }
 
         report
+    }
+
+    fn except_series_occurrence(&mut self, calendar_id: &str, uid: &str, date: Date) {
+        let series = self.events.iter_mut().find(|event| {
+            event.calendar_id == calendar_id
+                && event.recurrence_id.is_none()
+                && event.recurrence != crate::model::Recurrence::None
+                && event.uid.as_deref() == Some(uid)
+        });
+        if let Some(series) = series
+            && !series.exceptions.contains(&date)
+        {
+            series.exceptions.push(date);
+        }
     }
 }

@@ -141,3 +141,93 @@ fn unavailable_portal_uses_native_fallback_and_cancel_can_reopen_without_importi
     assert!(app.state.events.is_empty());
     assert_eq!(app.state.overlay, Overlay::None);
 }
+
+const GOOGLE_SERIES_WITH_OVERRIDES: &str = "BEGIN:VCALENDAR\r\n\
+    PRODID:-//Google Inc//Google Calendar 70.9054//EN\r\n\
+    VERSION:2.0\r\n\
+    CALSCALE:GREGORIAN\r\n\
+    METHOD:PUBLISH\r\n\
+    X-WR-CALNAME:Home\r\n\
+    BEGIN:VEVENT\r\n\
+    DTSTART:20261203T100000\r\n\
+    DTEND:20261203T103000\r\n\
+    DTSTAMP:20261124T120000Z\r\n\
+    UID:standup@google.com\r\n\
+    RECURRENCE-ID:20261202T090000\r\n\
+    SEQUENCE:1\r\n\
+    STATUS:CONFIRMED\r\n\
+    SUMMARY:Standup (moved)\r\n\
+    END:VEVENT\r\n\
+    BEGIN:VEVENT\r\n\
+    DTSTART:20261201T090000\r\n\
+    DTEND:20261201T093000\r\n\
+    RRULE:FREQ=DAILY;COUNT=5\r\n\
+    DTSTAMP:20261124T120000Z\r\n\
+    UID:standup@google.com\r\n\
+    SEQUENCE:0\r\n\
+    STATUS:CONFIRMED\r\n\
+    SUMMARY:Standup\r\n\
+    END:VEVENT\r\n\
+    BEGIN:VEVENT\r\n\
+    DTSTART;VALUE=DATE:20261201\r\n\
+    DTEND;VALUE=DATE:20261202\r\n\
+    RRULE:FREQ=WEEKLY;BYDAY=TU\r\n\
+    DTSTAMP:20261124T120000Z\r\n\
+    UID:bins@google.com\r\n\
+    STATUS:CONFIRMED\r\n\
+    SUMMARY:Bins out\r\n\
+    END:VEVENT\r\n\
+    BEGIN:VEVENT\r\n\
+    DTSTART;VALUE=DATE:20261208\r\n\
+    DTEND;VALUE=DATE:20261209\r\n\
+    DTSTAMP:20261124T120000Z\r\n\
+    UID:bins@google.com\r\n\
+    RECURRENCE-ID;VALUE=DATE:20261208\r\n\
+    STATUS:CANCELLED\r\n\
+    SUMMARY:Bins out\r\n\
+    END:VEVENT\r\n\
+    BEGIN:VEVENT\r\n\
+    DTSTART:20261201T120000\r\n\
+    DTEND:20261201T130000\r\n\
+    DTSTAMP:20261124T120000Z\r\n\
+    UID:lunch@google.com\r\n\
+    STATUS:CANCELLED\r\n\
+    SUMMARY:Lunch\r\n\
+    END:VEVENT\r\n\
+    END:VCALENDAR\r\n";
+
+#[test]
+fn recurrence_overrides_replace_their_series_occurrence_across_import_and_export() {
+    let mut state = AppState::empty(Date::new(2026, 11, 24).unwrap(), 680);
+    let parsed = crate::ics::parse_ics(GOOGLE_SERIES_WITH_OVERRIDES, "cal.home").unwrap();
+    let report = state.commit_import(parsed, "cal.home");
+    assert_eq!(report.added, 3);
+
+    let titles_on = |state: &AppState, day: u32| {
+        state
+            .events_on(Date::new(2026, 12, day).unwrap())
+            .into_iter()
+            .map(|event| event.title)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(titles_on(&state, 1), ["Bins out", "Standup"]);
+    assert_eq!(titles_on(&state, 2), Vec::<String>::new());
+    assert_eq!(titles_on(&state, 3), ["Standup", "Standup (moved)"]);
+    assert_eq!(titles_on(&state, 8), Vec::<String>::new());
+    assert_eq!(titles_on(&state, 15), ["Bins out"]);
+
+    let exported =
+        crate::ics_export::serialize_calendar(&state.events, Date::new(2026, 11, 24).unwrap());
+    assert!(exported.contains("RECURRENCE-ID:20261202T090000\r\n"));
+    assert!(!exported.contains("EXDATE:20261202T090000"));
+    assert!(exported.contains("EXDATE;VALUE=DATE:20261208\r\n"));
+
+    let mut reimported = AppState::empty(Date::new(2026, 11, 24).unwrap(), 680);
+    reimported.commit_import(
+        crate::ics::parse_ics(&exported, "cal.home").unwrap(),
+        "cal.home",
+    );
+    for day in [1, 2, 3, 8, 15] {
+        assert_eq!(titles_on(&reimported, day), titles_on(&state, day));
+    }
+}
