@@ -103,3 +103,25 @@ fn paging_retires_occurrence_actions_without_reusing_their_identity() {
     drop(crate::view::month::month(&app.state));
     assert_eq!(app.state.schedule_occurrence(returned.get()), None);
 }
+
+#[test]
+fn following_edit_of_a_counted_series_keeps_its_end_after_deletions() {
+    let (mut app, date) = weekly();
+    app.state.events[0].recurrence_count = Some(6);
+    app.state.events[0].exceptions = vec![date.add_days(7), date.add_days(14)];
+    let last = date.add_days(35);
+    let on = date.add_days(21);
+    app.step(Message::OpenOccurrenceEditor { id: 1, on });
+    app.step(Message::EditTitle("Revised standup".into()));
+    app.step(Message::SaveEvent);
+    app.step(Message::RecurrenceChoiceFollowing);
+    let edited = app.state.events.iter().find(|event| event.id != 1).unwrap();
+    assert_eq!(edited.recurrence_count, Some(3));
+    assert!(edited.occurs_on(last));
+    assert!(
+        !app.state
+            .events
+            .iter()
+            .any(|event| event.occurs_on(last.add_days(7)))
+    );
+}

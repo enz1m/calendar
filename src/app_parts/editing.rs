@@ -319,10 +319,15 @@ pub(super) fn occurrence_ordinal(series: &Event, occurrence: Date) -> Option<u32
     if occurrence < series.date || !series.occurs_on(occurrence) {
         return None;
     }
+    // COUNT positions include excepted dates.
+    let schedule = Event {
+        exceptions: Vec::new(),
+        ..series.clone()
+    };
     let mut date = series.date;
     let mut ordinal = 0_u32;
     while date <= occurrence {
-        if series.occurs_on(date) {
+        if schedule.occurs_on(date) {
             ordinal = ordinal.saturating_add(1);
         }
         date = date.add_days(1);
