@@ -103,7 +103,7 @@ pub(super) fn reduce_state(s: &mut AppState, message: Message) -> Task<Message> 
 
         #[cfg(feature = "center")]
         Message::QuickAddDuration(v) => {
-            let fmt = s.time_format();
+            let fmt = s.entry_time_format();
             let mut drafts = std::mem::take(&mut s.time_drafts);
             if let Overlay::QuickAdd(q) = &mut s.overlay {
                 let dur = v.max(15);
@@ -114,7 +114,7 @@ pub(super) fn reduce_state(s: &mut AppState, message: Message) -> Task<Message> 
         }
 
         Message::QuickAddStartTime(outcome) => {
-            let fmt = s.time_format();
+            let fmt = s.entry_time_format();
             let mut drafts = std::mem::take(&mut s.time_drafts);
             if let Overlay::QuickAdd(q) = &mut s.overlay {
                 crate::time_entry::apply_start(&mut q.draft, &mut drafts, &fmt, outcome);
@@ -123,7 +123,7 @@ pub(super) fn reduce_state(s: &mut AppState, message: Message) -> Task<Message> 
         }
 
         Message::QuickAddEndTime(outcome) => {
-            let fmt = s.time_format();
+            let fmt = s.entry_time_format();
             let mut drafts = std::mem::take(&mut s.time_drafts);
             if let Overlay::QuickAdd(q) = &mut s.overlay {
                 crate::time_entry::apply_end(&mut q.draft, &mut drafts, &fmt, outcome);
@@ -278,7 +278,7 @@ pub(super) fn reduce_state(s: &mut AppState, message: Message) -> Task<Message> 
         }),
 
         Message::EditStartTime(outcome) => {
-            let fmt = s.time_format();
+            let fmt = s.entry_time_format();
             let mut drafts = std::mem::take(&mut s.time_drafts);
             if let Overlay::Editor(e) = &mut s.overlay {
                 crate::time_entry::apply_start(e, &mut drafts, &fmt, outcome);
@@ -287,7 +287,7 @@ pub(super) fn reduce_state(s: &mut AppState, message: Message) -> Task<Message> 
         }
 
         Message::EditEndTime(outcome) => {
-            let fmt = s.time_format();
+            let fmt = s.entry_time_format();
             let mut drafts = std::mem::take(&mut s.time_drafts);
             if let Overlay::Editor(e) = &mut s.overlay {
                 crate::time_entry::apply_end(e, &mut drafts, &fmt, outcome);

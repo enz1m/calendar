@@ -36,7 +36,7 @@ pub(super) fn editor<'a>(
 
     if !e.all_day {
         // Uncommitted time text is retained separately from the event's committed minute values.
-        let fmt = app.time_format();
+        let fmt = app.entry_time_format();
         let drafts = &app.time_drafts;
         let starts_label: Element<'_, Message> = container(
             enz_text(crate::l10n::tr("Time"))

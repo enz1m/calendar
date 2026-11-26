@@ -135,7 +135,7 @@ fn quick_add_popover<'a>(app: &'a AppState, draft: &'a Event) -> Element<'a, Mes
     .id(quick_add_title_id())
     .on_submit(Message::QuickAddSave);
 
-    let fmt = app.time_format();
+    let fmt = app.entry_time_format();
     let drafts = &app.time_drafts;
     let mut start_field = enz_time_field(
         &drafts.start,

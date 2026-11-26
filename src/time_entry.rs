@@ -8,6 +8,7 @@ use crate::model::{Event, MINUTES_PER_DAY, MinuteOfDay};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct TimeDrafts {
+    pub format: Option<TimeFormat>,
     pub start: String,
     pub end: String,
     pub start_error: Option<String>,
@@ -18,6 +19,7 @@ impl TimeDrafts {
     #[must_use]
     pub(crate) fn seeded(event: &Event, fmt: &TimeFormat) -> Self {
         Self {
+            format: Some(fmt.clone()),
             start: event.start_minute.format(fmt),
             end: event.end_minute.format(fmt),
             start_error: None,
@@ -124,6 +126,33 @@ mod tests {
 
     fn h12() -> TimeFormat {
         TimeFormat::new(HourCycle::H12)
+    }
+
+    #[test]
+    fn desktop_hour_cycle_updates_labels_without_reinterpreting_open_drafts() {
+        use crate::model::TimeFormatPref;
+        use crate::state::{AppState, Overlay};
+        use enzui_core::desktop_settings::{DesktopSettings, with_settings};
+
+        let date = enzui_core::civil_date::Date::new(2026, 11, 26).unwrap();
+        let mut state = AppState::empty(date, 0);
+        let desktop = |clock_24h| DesktopSettings {
+            clock_24h: Some(clock_24h),
+            ..DesktopSettings::default()
+        };
+        let mut event = Event::new(1, "cal.home", date);
+        event.start_minute = MinuteOfDay::hm(17, 30);
+        with_settings(desktop(false), || {
+            assert_eq!(state.time_format().cycle(), HourCycle::H12);
+            state.set_overlay(Overlay::Editor(Box::new(event)));
+        });
+        with_settings(desktop(true), || {
+            assert_eq!(state.time_format().cycle(), HourCycle::H23);
+            let parsed = state.entry_time_format().parse(&state.time_drafts.start).unwrap();
+            assert_eq!(parsed, TimeOfDay::hm(17, 30).unwrap());
+            state.settings.time_format = TimeFormatPref::TwelveHour;
+            assert_eq!(state.time_format().cycle(), HourCycle::H12);
+        });
     }
 
     #[test]

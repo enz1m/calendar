@@ -380,6 +380,8 @@ impl AppState {
         let localizer = crate::l10n::localizer();
         let system = if std::env::var_os("ENZUI_CALENDAR_CLOCK").is_some() {
             self.system_hour_cycle
+        } else if let Some(clock_24h) = enzui_core::desktop_settings::clock_24h() {
+            if clock_24h { HourCycle::H23 } else { HourCycle::H12 }
         } else {
             localizer
                 .locale_for(enzui_core::localization::LocaleCategory::Time)
@@ -392,6 +394,10 @@ impl AppState {
                 localizer.text("enzui-time-pm"),
             ),
         )
+    }
+
+    pub(crate) fn entry_time_format(&self) -> TimeFormat {
+        self.time_drafts.format.clone().unwrap_or_else(|| self.time_format())
     }
 
     pub(crate) fn set_overlay(&mut self, overlay: Overlay) {
