@@ -120,17 +120,6 @@ pub(crate) fn floor_of(now: i64, log: &ReminderLog) -> i64 {
 }
 
 #[must_use]
-fn now_utc_of(now: i64) -> i64 {
-    match crate::sysclock::local_minute_to_utc(now) {
-        // Live scheduling chooses the earlier instant during a fold so a due snooze is not refused.
-        crate::sysclock::LocalInstant::Utc(utc) | crate::sysclock::LocalInstant::Ambiguous(utc) => {
-            utc
-        }
-        crate::sysclock::LocalInstant::Unresolvable => now,
-    }
-}
-
-#[must_use]
 pub(crate) fn plan<'a>(
     events: impl IntoIterator<Item = &'a Event>,
     now: i64,
@@ -139,7 +128,6 @@ pub(crate) fn plan<'a>(
 ) -> Plan {
     let floor = floor_of(now, log);
     let offset_now = now - now_utc;
-    let floor_utc = floor - offset_now;
     let mut eligible: Vec<Due> = Vec::new();
 
     for event in events {
@@ -193,7 +181,9 @@ pub(crate) fn plan<'a>(
                 continue;
             }
             // Local projections order reminders; UTC deadlines determine when snoozes are due.
-            if snoozed.until_utc <= floor_utc || snoozed.until_utc > now_utc {
+            if snoozed.until_utc < now_utc.saturating_sub(MISSED_WINDOW_MINUTES)
+                || snoozed.until_utc > now_utc
+            {
                 continue;
             }
             eligible.push(Due {
@@ -230,32 +220,48 @@ pub(crate) fn plan<'a>(
     }
 }
 
-pub(crate) fn apply_claimed(state: &mut AppState, key: ReminderKey) -> bool {
+pub(crate) fn occurrence_utc_minute(event: &Event, on: Date) -> Option<i64> {
+    let wall = abs_minute(on, event.start_minute.get()) - i64::from(event.alert?);
+    if let Some((start_offset, _)) = event.tz_anchor.offsets() {
+        return Some(wall - i64::from(start_offset));
+    }
+    match crate::sysclock::local_minute_to_utc(wall) {
+        crate::sysclock::LocalInstant::Utc(utc) | crate::sysclock::LocalInstant::Ambiguous(utc) => {
+            Some(utc)
+        }
+        crate::sysclock::LocalInstant::Unresolvable => None,
+    }
+}
+
+pub(crate) enum Claim {
+    Applied,
+    Pending,
+    Stale,
+}
+
+pub(crate) fn apply_claimed(state: &mut AppState, key: ReminderKey) -> Claim {
     let snoozed_until = state.reminders.snoozed_until(key);
     if (state.reminders.has_fired(key) && snoozed_until.is_none())
         || !matches!(state.overlay, Overlay::None)
     {
-        return false;
+        return Claim::Stale;
     }
     let Some(event) = state
         .event(key.event_id)
         .filter(|event| event.alert.is_some() && event.occurs_on(key.on) && state.is_visible(event))
         .cloned()
     else {
-        return false;
+        return Claim::Stale;
     };
-    let due_at = snoozed_until.unwrap_or_else(|| {
-        abs_minute(key.on, event.start_minute.get()) - i64::from(event.alert.unwrap_or(0))
-    });
-    let now = abs_minute(state.today, state.now_minute);
-    // Occurrence lead times and snooze deadlines are checked in their own local and UTC frames.
-    let now_ref = if snoozed_until.is_some() {
-        now_utc_of(now)
-    } else {
-        now
+    let Some(due_at) = snoozed_until.or_else(|| occurrence_utc_minute(&event, key.on)) else {
+        return Claim::Pending;
     };
-    if due_at > now_ref || due_at < now_ref.saturating_sub(MISSED_WINDOW_MINUTES) {
-        return false;
+    let now_utc = crate::sysclock::utc_minute_now();
+    if due_at > now_utc {
+        return Claim::Pending;
+    }
+    if due_at < now_utc.saturating_sub(MISSED_WINDOW_MINUTES) {
+        return Claim::Stale;
     }
     let due = Due {
         key,
@@ -273,7 +279,7 @@ pub(crate) fn apply_claimed(state: &mut AppState, key: ReminderKey) -> bool {
         title: event.title,
         when: reminder_when(&due, &state.time_format()),
     };
-    true
+    Claim::Applied
 }
 
 pub(crate) fn check_alerts(state: &mut AppState) -> bool {
@@ -291,7 +297,7 @@ pub(crate) fn check_alerts(state: &mut AppState) -> bool {
         .iter()
         .filter(|e| state.is_visible(e))
         .collect();
-    let now_utc = now_utc_of(now);
+    let now_utc = crate::sysclock::utc_minute_now();
     let plan = plan(visible, now, now_utc, &state.reminders);
 
     for key in &plan.suppress {
@@ -331,8 +337,7 @@ pub(crate) fn reminder_when(due: &Due, fmt: &enzui_core::time_of_day::TimeFormat
 
 pub(crate) fn snooze(state: &mut AppState, key: ReminderKey) {
     // Snooze records a UTC instant so changing the system zone cannot reinterpret its deadline.
-    let now = abs_minute(state.today, state.now_minute);
-    let until_utc = now_utc_of(now) + SNOOZE_MINUTES;
+    let until_utc = crate::sysclock::utc_minute_now() + SNOOZE_MINUTES;
     state.reminders.snooze(key, until_utc);
     state.overlay = Overlay::None;
 }

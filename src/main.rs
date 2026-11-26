@@ -67,6 +67,9 @@ fn main() -> std::process::ExitCode {
 }
 
 fn start() -> std::process::ExitCode {
+    if let Some(result) = reminder_activation::run_if_requested() {
+        return result;
+    }
     if let Some(result) = package::command() {
         return result;
     }

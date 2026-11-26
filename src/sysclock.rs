@@ -34,6 +34,19 @@ pub(crate) fn local_minute_to_utc(local_abs_minute: i64) -> LocalInstant {
     }
 }
 
+pub(crate) fn utc_minute_now() -> i64 {
+    #[cfg(test)]
+    if let Some(minute) = TEST_UTC_MINUTE.get() {
+        return minute;
+    }
+    chrono::Utc::now().timestamp().div_euclid(60)
+}
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TEST_UTC_MINUTE: std::cell::Cell<Option<i64>> = const { std::cell::Cell::new(None) };
+}
+
 #[must_use]
 pub(crate) fn local_now() -> (Date, i32) {
     let now = Local::now();

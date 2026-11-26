@@ -119,10 +119,9 @@ impl App {
         if let Some(failure) = activation_failure {
             self.disclose_reminder_activation_failure(&failure);
         }
-        let had_claim = claimed.is_some();
-        let claimed_applied =
-            claimed.is_some_and(|key| reminders::apply_claimed(&mut self.state, key));
-        if had_claim && !claimed_applied {
+        let claim = claimed.map(|key| reminders::apply_claimed(&mut self.state, key));
+        let claimed_applied = matches!(claim, Some(reminders::Claim::Applied));
+        if matches!(claim, Some(reminders::Claim::Stale)) {
             self.disclose_reminder_activation_failure(
                 &crate::reminder_activation::stale_claim_failure(),
             );

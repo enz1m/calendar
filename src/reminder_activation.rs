@@ -6,7 +6,6 @@ use std::sync::{
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use chrono::{Local, LocalResult, NaiveDate, TimeZone};
 use enzui_core::blocking_task::{BlockingTaskError, BlockingTaskOwner};
 use enzui_services::durable_activation::systemd::{self, SystemdUserBackend};
 use enzui_services::durable_activation::{
@@ -15,8 +14,14 @@ use enzui_services::durable_activation::{
 };
 use iced::Task;
 
-use crate::reminders::{MISSED_WINDOW_MINUTES, ReminderKey, abs_minute};
+use crate::reminders::{
+    MINUTES_PER_DAY, MISSED_WINDOW_MINUTES, ReminderKey, abs_minute, occurrence_utc_minute,
+};
+
+#[path = "reminder_zone_watch.rs"]
+mod zone_watch;
 use crate::state::AppState;
+pub(crate) use zone_watch::run_if_requested;
 
 const APPLICATION_ID: &str = crate::package::APP_ID;
 const NEXT_REMINDER_JOB: &str = "next-reminder";
@@ -112,40 +117,14 @@ pub(crate) fn boot(arguments: impl IntoIterator<Item = String>) -> BootState {
     let arguments = arguments.into_iter().collect::<Vec<_>>();
     let invocation = ActivationInvocation::parse(arguments.iter().map(String::as_str));
     let invocation_seen = !matches!(&invocation, Ok(None));
-    let application = match DesktopApplicationId::new(APPLICATION_ID) {
-        Ok(application) => application,
-        Err(error) => {
-            return BootState {
-                scheduler: None,
-                claimed: None,
-                invocation_seen,
-                failure: Some(Failure::new(FailureKind::Setup, format!("{error:?}"))),
-            };
-        }
-    };
-    // Sandbox-local XDG paths are not the host manager's unit search paths, and
-    // /app executables cannot be launched by host timers. Never publish there.
-    if enzui_core::portal::sandbox::is_sandboxed(
-        &enzui_core::portal::sandbox::SandboxEvidence::from_host(),
-    ) {
-        return BootState {
-            scheduler: None,
-            claimed: None,
-            invocation_seen,
-            failure: Some(Failure::new(
-                FailureKind::Setup,
-                "native systemd reminder activation is unavailable in an application sandbox",
-            )),
-        };
-    }
-    let mut scheduler = match systemd::from_env(application) {
+    let mut scheduler = match native_scheduler() {
         Ok(scheduler) => scheduler,
-        Err(error) => {
+        Err(failure) => {
             return BootState {
                 scheduler: None,
                 claimed: None,
                 invocation_seen,
-                failure: Some(Failure::new(FailureKind::Setup, error.to_string())),
+                failure: Some(failure),
             };
         }
     };
@@ -191,6 +170,22 @@ pub(crate) fn boot(arguments: impl IntoIterator<Item = String>) -> BootState {
         invocation_seen,
         failure,
     }
+}
+
+fn native_scheduler() -> Result<Scheduler, Failure> {
+    // Host systemd cannot launch an executable or read units inside the application sandbox.
+    if enzui_core::portal::sandbox::is_sandboxed(
+        &enzui_core::portal::sandbox::SandboxEvidence::from_host(),
+    ) {
+        return Err(Failure::new(
+            FailureKind::Setup,
+            "native systemd reminder activation is unavailable in an application sandbox",
+        ));
+    }
+    let application = DesktopApplicationId::new(APPLICATION_ID)
+        .map_err(|error| Failure::new(FailureKind::Setup, format!("{error:?}")))?;
+    systemd::from_env(application)
+        .map_err(|error| Failure::new(FailureKind::Setup, error.to_string()))
 }
 
 #[derive(Clone, Debug)]
@@ -357,15 +352,24 @@ fn sync_scheduler_if_current(
         return Ok(());
     }
     let mut scheduler = scheduler.lock().unwrap_or_else(PoisonError::into_inner);
+    let _lock = zone_watch::lock(&scheduler)
+        .map_err(|error| Failure::new(FailureKind::Schedule, error.to_string()))?;
     if latest_generation.load(Ordering::Acquire) != generation {
         return Ok(());
     }
-    sync_scheduler_locked(&mut scheduler, desired)
+    let has_reminder = desired.is_some();
+    sync_scheduler_locked(&mut scheduler, desired, None)?;
+    if has_reminder {
+        zone_watch::enable(scheduler.backend().unit_directory())
+            .map_err(|error| Failure::new(FailureKind::Setup, error.to_string()))?;
+    }
+    Ok(())
 }
 
 fn sync_scheduler_locked(
     scheduler: &mut Scheduler,
     desired: Option<DesiredReminder>,
+    earliest_wakeup: Option<SystemTime>,
 ) -> Result<(), Failure> {
     let job = JobId::new(NEXT_REMINDER_JOB)
         .map_err(|error| Failure::new(FailureKind::Schedule, format!("{error:?}")))?;
@@ -380,7 +384,7 @@ fn sync_scheduler_locked(
                     desired.key.event_id.to_string(),
                     desired.key.on.to_days().to_string(),
                 ],
-                desired.instant,
+                earliest_wakeup.map_or(desired.instant, |wakeup| desired.instant.max(wakeup)),
                 MissedActivationPolicy::CatchUpWithin(Duration::from_secs(
                     u64::try_from(MISSED_WINDOW_MINUTES)
                         .unwrap_or_default()
@@ -413,17 +417,11 @@ fn parse_claimed_key(arguments: &[String]) -> Option<ReminderKey> {
 pub(crate) fn desired(state: &AppState) -> Result<Option<DesiredReminder>, Failure> {
     let now = abs_minute(state.today, state.now_minute);
     let floor = crate::reminders::floor_of(now, &state.reminders);
-    // Snooze catch-up floors are compared in UTC because the deadline is an instant.
-    let floor_utc = match crate::sysclock::local_minute_to_utc(floor) {
-        crate::sysclock::LocalInstant::Utc(utc) | crate::sysclock::LocalInstant::Ambiguous(utc) => {
-            utc
-        }
-        crate::sysclock::LocalInstant::Unresolvable => floor,
-    };
+    let utc_cutoff = crate::sysclock::utc_minute_now().saturating_sub(MISSED_WINDOW_MINUTES);
     let mut best: Option<DesiredReminder> = None;
     for snoozed in &state.reminders.snoozed {
         // A snooze whose occurrence no longer exists cannot own the scheduled reminder job.
-        if snoozed.until_utc <= floor_utc
+        if snoozed.until_utc < utc_cutoff
             || !state.event(snoozed.key.event_id).is_some_and(|event| {
                 event.alert.is_some() && state.is_visible(event) && event.occurs_on(snoozed.key.on)
             })
@@ -444,45 +442,32 @@ pub(crate) fn desired(state: &AppState) -> Result<Option<DesiredReminder>, Failu
         let Some(lead) = event.alert.map(i64::from) else {
             continue;
         };
-        let Some(mut occurrence) = event.next_occurrence(state.today) else {
+        let Ok(day) = i32::try_from((floor + lead).div_euclid(MINUTES_PER_DAY)) else {
             continue;
         };
-        let mut due = abs_minute(occurrence, event.start_minute.get()) - lead;
-        let mut key = ReminderKey {
-            event_id: event.id,
-            on: occurrence,
-        };
-        let utc_offset = event.tz_anchor.offsets().map(|(start, _)| start);
-        if due > floor && !state.reminders.has_fired(key) {
-            let instant =
-                reminder_system_time(due, utc_offset).ok_or_else(unrepresentable_reminder_time)?;
-            keep_earliest(&mut best, DesiredReminder { key, instant });
-        }
-        if due <= now {
-            let Some(next) = event.next_occurrence(occurrence.add_days(1)) else {
-                continue;
-            };
-            occurrence = next;
-            due = abs_minute(occurrence, event.start_minute.get()) - lead;
-            key = ReminderKey {
+        let mut occurrence = event.next_occurrence(enzui_core::civil_date::Date::from_days(day));
+        while let Some(on) = occurrence {
+            let key = ReminderKey {
                 event_id: event.id,
-                on: occurrence,
+                on,
             };
-            if !state.reminders.has_fired(key) {
-                let instant = reminder_system_time(due, utc_offset)
-                    .ok_or_else(unrepresentable_reminder_time)?;
-                keep_earliest(&mut best, DesiredReminder { key, instant });
+            let wall = abs_minute(on, event.start_minute.get()) - lead;
+            if wall > floor && !state.reminders.has_fired(key) {
+                let utc =
+                    occurrence_utc_minute(event, on).ok_or_else(unrepresentable_reminder_time)?;
+                if utc >= utc_cutoff {
+                    let instant =
+                        utc_minute_to_system_time(utc).ok_or_else(unrepresentable_reminder_time)?;
+                    keep_earliest(&mut best, DesiredReminder { key, instant });
+                    break;
+                }
             }
+            occurrence = event
+                .next_occurrence(on.add_days(1))
+                .filter(|next| *next > on);
         }
     }
     Ok(best)
-}
-
-fn reminder_system_time(minute: i64, utc_offset: Option<i32>) -> Option<SystemTime> {
-    utc_offset.map_or_else(
-        || local_minute_to_system_time(minute),
-        |offset| utc_minute_to_system_time(minute.saturating_sub(i64::from(offset))),
-    )
 }
 
 fn unrepresentable_reminder_time() -> Failure {
@@ -504,22 +489,6 @@ fn keep_earliest(best: &mut Option<DesiredReminder>, candidate: DesiredReminder)
 fn utc_minute_to_system_time(minute: i64) -> Option<SystemTime> {
     let seconds = u64::try_from(minute).ok()?.checked_mul(60)?;
     UNIX_EPOCH.checked_add(Duration::from_secs(seconds))
-}
-
-fn local_minute_to_system_time(minute: i64) -> Option<SystemTime> {
-    let day = i32::try_from(minute.div_euclid(24 * 60)).ok()?;
-    let minute_of_day = u32::try_from(minute.rem_euclid(24 * 60)).ok()?;
-    let date = enzui_core::civil_date::Date::from_days(day);
-    let local_date = NaiveDate::from_ymd_opt(date.year(), date.month(), date.day())?;
-    let local_time = local_date.and_hms_opt(minute_of_day / 60, minute_of_day % 60, 0)?;
-    // A repeated local time fires at its earlier real instant.
-    let timestamp = match Local.from_local_datetime(&local_time) {
-        LocalResult::Single(value) => value.timestamp(),
-        LocalResult::Ambiguous(first, second) => first.timestamp().min(second.timestamp()),
-        LocalResult::None => return None,
-    };
-    let timestamp = u64::try_from(timestamp).ok()?;
-    UNIX_EPOCH.checked_add(Duration::from_secs(timestamp))
 }
 
 #[cfg(test)]

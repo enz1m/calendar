@@ -205,6 +205,12 @@ impl Fixture {
             .map(Result::unwrap)
             .map(|e| e.path())
             .filter(|p| p.extension().is_some_and(|e| e == extension))
+            .filter(|p| {
+                !p.file_name().is_some_and(|name| {
+                    name.as_encoded_bytes()
+                        .starts_with(b"calendar-reminder-replan.")
+                })
+            })
             .collect();
         paths.sort();
         paths
@@ -274,6 +280,23 @@ fn child_mode() -> bool {
         serde_json::from_slice(&fs::read("/tmp/fixture/input.json").unwrap()).unwrap();
     let date = Date::from_days(i32::try_from(input["day"].as_i64().unwrap()).unwrap());
     let now = i32::try_from(input["minute"].as_i64().unwrap()).unwrap();
+    use chrono::{Local, TimeZone};
+    let local = chrono::NaiveDate::from_ymd_opt(date.year(), date.month(), date.day())
+        .unwrap()
+        .and_hms_opt((now / 60) as u32, (now % 60) as u32, 0)
+        .unwrap();
+    let utc = Local
+        .from_local_datetime(&local)
+        .earliest()
+        .unwrap()
+        .timestamp()
+        / 60;
+    crate::sysclock::TEST_UTC_MINUTE.set(Some(utc));
+    if input["action"] == "replan" {
+        super::zone_watch::replan(date, now).unwrap();
+        fs::write("/tmp/fixture/output.json", b"null").unwrap();
+        return true;
+    }
     let resolver = enzui_core::app_data::AppDataResolver::from_env();
     let path = persistence::resolve_state_location(&resolver).unwrap();
     assert_eq!(path, Path::new("/tmp/fixture/data/calendar-app/state.json"));
@@ -476,6 +499,13 @@ fn sandboxed_reminders_stay_in_app_without_publishing_host_timers() {
     assert_raised(&due, date);
     assert_eq!(due["fired"], 1);
     assert!(fixture.units("timer").is_empty());
+    assert!(
+        !fixture
+            .root
+            .join("config/systemd/user")
+            .join(super::zone_watch::TIMER)
+            .exists()
+    );
     assert!(!fixture.root.join("manager-calls.jsonl").exists());
     assert!(
         !fixture
@@ -483,4 +513,46 @@ fn sandboxed_reminders_stay_in_app_without_publishing_host_timers() {
             .join("state/io.github.enzui.Calendar/durable-activation")
             .exists()
     );
+}
+
+#[test]
+fn closed_calendar_replans_eastward_and_rechecks_old_westward_wakeup() {
+    if child_mode() {
+        return;
+    }
+    let (date, now) = recent_clock();
+    let west = Fixture::new();
+    west.seed(date, now, now + 1, TzAnchor::Floating);
+    west.step(date, now, "boot", vec![], "UTC");
+    let timer = west
+        .root
+        .join("config/systemd/user")
+        .join(super::zone_watch::TIMER);
+    assert!(
+        fs::read_to_string(timer)
+            .unwrap()
+            .contains("OnTimezoneChange=yes")
+    );
+    let original = west.instant();
+    let old_wakeup_minute = now + 1 - 120;
+    let old_wakeup = west.step(
+        date.add_days(old_wakeup_minute.div_euclid(1440)),
+        old_wakeup_minute.rem_euclid(1440),
+        "boot",
+        west.invocation(),
+        "Etc/GMT+2",
+    );
+    assert_eq!(old_wakeup["raised"], Value::Null);
+    assert_eq!(old_wakeup["fired"], 0);
+    assert_eq!(west.instant(), original + 2 * 3600);
+
+    let east = Fixture::new();
+    let tomorrow = date.add_days(1);
+    east.seed(tomorrow, 0, 12 * 60, TzAnchor::Floating);
+    east.step(tomorrow, 0, "boot", vec![], "UTC");
+    let original = east.instant();
+    let persisted = fs::read(east.state_path()).unwrap();
+    east.step(tomorrow, 0, "replan", vec![], "Etc/GMT-2");
+    assert_eq!(east.instant(), original - 2 * 3600);
+    assert_eq!(fs::read(east.state_path()).unwrap(), persisted);
 }
