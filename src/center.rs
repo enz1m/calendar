@@ -24,6 +24,7 @@ pub(crate) enum CenterCall {
         date: String,
         start_minute: i32,
         duration_minutes: i32,
+        location: Option<String>,
     },
     GoToDate {
         date: String,
@@ -44,6 +45,7 @@ struct CreateArgs {
     date: String,
     start_minute: i32,
     duration_minutes: i32,
+    location: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -75,6 +77,7 @@ pub(crate) fn registry() -> AppFunctionRegistry<CenterCall> {
                     "event_id": {"type": "integer"},
                     "title": {"type": "string"},
                     "calendar": {"type": "string"},
+                    "location": {"type": "string"},
                     "date": {"type": "string"},
                     "all_day": {"type": "boolean"},
                     "start_minute": {"type": "integer"},
@@ -100,7 +103,8 @@ pub(crate) fn registry() -> AppFunctionRegistry<CenterCall> {
                 "title": {"type": "string", "minLength": 1, "maxLength": 200},
                 "date": date_schema(),
                 "start_minute": {"type": "integer", "minimum": 0, "maximum": 1439},
-                "duration_minutes": {"type": "integer", "minimum": 5, "maximum": 1440}
+                "duration_minutes": {"type": "integer", "minimum": 5, "maximum": 1440},
+                "location": {"type": "string", "maxLength": 500}
             }),
             &["title", "date", "start_minute", "duration_minutes"],
         ),
@@ -128,6 +132,7 @@ pub(crate) fn registry() -> AppFunctionRegistry<CenterCall> {
             date: args.date,
             start_minute: args.start_minute,
             duration_minutes: args.duration_minutes,
+            location: args.location,
         })
         .expect("create_event spec"),
         AppFunction::typed(go_to, |args: DateArgs| CenterCall::GoToDate {
@@ -229,6 +234,7 @@ impl App {
                 date,
                 start_minute,
                 duration_minutes,
+                location,
             } => {
                 let date = match parse_date(&date) {
                     Ok(date) => date,
@@ -249,7 +255,7 @@ impl App {
                     minute: start_minute,
                     at: iced::Point::ORIGIN,
                 })];
-                if !matches!(self.state.overlay, Overlay::QuickAdd(_)) {
+                let Overlay::QuickAdd(draft) = &mut self.state.overlay else {
                     return (
                         Task::batch(tasks),
                         Err(CenterFailure::new(
@@ -257,7 +263,8 @@ impl App {
                             "a new event cannot be added now",
                         )),
                     );
-                }
+                };
+                draft.draft.location = location.unwrap_or_default();
                 tasks.push(self.update(Message::QuickAddTitle(title)));
                 tasks.push(self.update(Message::QuickAddDuration(duration_minutes)));
                 tasks.push(self.update(Message::QuickAddSave));
@@ -330,6 +337,7 @@ impl App {
                     "event_id": event.id,
                     "title": event.title,
                     "calendar": calendar,
+                    "location": event.location,
                     "date": date.to_string(),
                     "all_day": event.all_day,
                     "start_minute": event.start_minute.get(),
