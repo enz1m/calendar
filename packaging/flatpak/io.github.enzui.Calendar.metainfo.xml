@@ -21,6 +21,9 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.3" date="2026-11-28">
+      <description><p>Keep reminders on time across time zone changes, follow the desktop clock format, and include event locations in MCP Center.</p></description>
+    </release>
     <release version="0.1.2" date="2026-11-23">
       <description>
         <p>Exported calendars keep the time information for recurring events with a scheduled end date.</p>

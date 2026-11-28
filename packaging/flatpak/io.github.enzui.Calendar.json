@@ -37,8 +37,8 @@
         },
         {
           "type": "archive",
-          "url": "https://github.com/enz1m/calendar/releases/download/v0.1.2/calendar-cargo-vendor-0.1.2.tar.xz",
-          "sha256": "49194852b35f5a8c8e2a59b4b5e55a26ddb800e0c1edbd78b48f5380aa1e3723",
+          "url": "https://github.com/enz1m/calendar/releases/download/v0.1.3/calendar-cargo-vendor-0.1.3.tar.xz",
+          "sha256": "74abd76a30f64607cc93d8aa21e917bd4fc7e05ef9473915ee4670c56db3da73",
           "strip-components": 1
         },
         {
