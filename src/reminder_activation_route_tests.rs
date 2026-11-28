@@ -360,11 +360,13 @@ fn child_mode() -> bool {
         action => panic!("unknown fixture action {action}"),
     }
     let overlay_after = matches!(app.state.overlay, Overlay::ReminderAlert { .. });
+    let has_toast = !app.state.toasts.is_empty();
     let close = route(&mut app, Message::CloseWindow(iced::window::Id::unique()));
     fs::write(
         "/tmp/fixture/output.json",
         serde_json::to_vec(&json!({
             "raised": raised, "close": close, "overlay_after": overlay_after,
+            "has_toast": has_toast,
             "snoozed": app.state.reminders.snoozed.len(), "fired": app.state.reminders.fired.len(),
         }))
         .unwrap(),
@@ -491,12 +493,31 @@ fn sandboxed_reminders_stay_in_app_without_publishing_host_timers() {
     fixture.seed(date, now, now + 1, TzAnchor::Floating);
     let waiting = fixture.step(date, now, "sandbox-boot", vec![], "UTC");
     assert_eq!(waiting["raised"], Value::Null);
+    assert_eq!(waiting["has_toast"], false);
     assert_eq!(
         waiting["close"], 1,
         "sandbox fallback must not leave close debt"
     );
+    let refused = fixture.step(
+        date,
+        now + 1,
+        "sandbox-boot",
+        [
+            "--enzui-durable-activation",
+            crate::package::APP_ID,
+            JOB,
+            "1",
+        ]
+        .map(str::to_owned)
+        .to_vec(),
+        "UTC",
+    );
+    assert_eq!(refused["raised"], Value::Null);
+    assert_eq!(refused["has_toast"], true);
+
     let due = fixture.step(date, now + 1, "sandbox-boot", vec![], "UTC");
     assert_raised(&due, date);
+    assert_eq!(due["has_toast"], false);
     assert_eq!(due["fired"], 1);
     assert!(fixture.units("timer").is_empty());
     assert!(

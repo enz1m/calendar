@@ -17,7 +17,7 @@ impl App {
     }
 
     pub(super) fn dispatch_reminder_activation_tracked(&mut self) -> (Task<Message>, Option<u64>) {
-        if !self.persist.is_enabled() {
+        if !self.persist.is_enabled() || !self.notifier.can_schedule_durable() {
             return (Task::none(), None);
         }
         let desired = match crate::reminder_activation::desired(&self.state) {

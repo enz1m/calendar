@@ -225,6 +225,10 @@ impl Notifier {
         self.durable.install(boot)
     }
 
+    pub(crate) fn can_schedule_durable(&self) -> bool {
+        self.durable.can_schedule()
+    }
+
     pub(crate) fn dispatch_durable(
         &mut self,
         desired: Option<crate::reminder_activation::DesiredReminder>,

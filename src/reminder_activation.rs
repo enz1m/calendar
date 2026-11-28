@@ -34,6 +34,7 @@ pub(crate) struct DesiredReminder {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FailureKind {
+    Sandboxed,
     Setup,
     Invocation,
     Claim,
@@ -59,7 +60,7 @@ impl Failure {
     #[must_use]
     pub(crate) fn user_summary(&self) -> &'static str {
         match self.kind {
-            FailureKind::Invocation | FailureKind::Claim => {
+            FailureKind::Sandboxed | FailureKind::Invocation | FailureKind::Claim => {
                 "This reminder activation could not be verified. Calendar opened without delivering it."
             }
             FailureKind::Setup
@@ -119,6 +120,9 @@ pub(crate) fn boot(arguments: impl IntoIterator<Item = String>) -> BootState {
     let invocation_seen = !matches!(&invocation, Ok(None));
     let mut scheduler = match native_scheduler() {
         Ok(scheduler) => scheduler,
+        Err(failure) if failure.kind == FailureKind::Sandboxed && !invocation_seen => {
+            return BootState::disabled();
+        }
         Err(failure) => {
             return BootState {
                 scheduler: None,
@@ -178,7 +182,7 @@ fn native_scheduler() -> Result<Scheduler, Failure> {
         &enzui_core::portal::sandbox::SandboxEvidence::from_host(),
     ) {
         return Err(Failure::new(
-            FailureKind::Setup,
+            FailureKind::Sandboxed,
             "native systemd reminder activation is unavailable in an application sandbox",
         ));
     }
@@ -211,7 +215,6 @@ pub(crate) struct Owner {
     pending: Option<(u64, Option<DesiredReminder>)>,
     applied: Option<DesiredReminder>,
     applied_known: bool,
-    enabled: bool,
     failure_announced: bool,
     latest_generation: Arc<AtomicU64>,
 }
@@ -225,7 +228,6 @@ impl Owner {
             pending: None,
             applied: None,
             applied_known: false,
-            enabled: false,
             failure_announced: false,
             latest_generation: Arc::new(AtomicU64::new(0)),
         }
@@ -235,10 +237,13 @@ impl Owner {
         &mut self,
         boot: BootState,
     ) -> (Option<ReminderKey>, bool, Option<Failure>) {
-        self.enabled = boot.scheduler.is_some() || boot.failure.is_some();
         self.scheduler = boot.scheduler;
         self.failure_announced = boot.failure.is_some();
         (boot.claimed, boot.invocation_seen, boot.failure)
+    }
+
+    pub(crate) fn can_schedule(&self) -> bool {
+        self.scheduler.is_some()
     }
 
     pub(crate) fn dispatch(
